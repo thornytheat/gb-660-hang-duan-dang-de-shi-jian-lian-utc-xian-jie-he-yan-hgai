@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="kpis">
+  <div class="kpi"><b>计费架次</b><strong id="kpi-sorties">–</strong><small>个</small></div>
+  <div class="kpi"><b>未结清航段</b><strong id="kpi-unsettled">–</strong><small>条</small></div>
+  <div class="kpi"><b>隔离</b><strong id="kpi-quarantine">–</strong><small>条</small></div>
+  <div class="kpi"><b>应收合计</b><strong id="kpi-fee">–</strong><small>元</small></div>
+</section>
+<div class="grid grid--split">
+  <section class="panel">
+    <div class="panel__head"><h2>计费规则</h2><span class="state state--ok">执飞号归并</span></div>
+    <div class="panel__body panel__body--scroll">
+      <table class="ledger"><thead><tr><th>序号</th><th>规则</th><th>处理</th><th>结果</th></tr></thead>
+      <tbody>{% for row in rows %}<tr><td class="num">{{ loop.index }}</td><td>{{ row.key }}</td><td>{{ row.status }}</td><td>{{ row.value }}</td></tr>{% endfor %}</tbody></table>
+    </div>
+  </section>
+  <section class="panel panel--evidence">
+    <div class="panel__head"><h2>运行结果 / 证据</h2><span class="panel__meta">含原航班号与行号</span></div>
+    <div class="panel__body"><div class="evidence"><b>POST /api/billing/runs</b><span>JSON 或 CSV 上传</span><code>重跑幂等</code></div><pre id="result">等待运行（页面演示调用内置样例）</pre></div>
+  </section>
+  <section class="panel panel--status">
+    <div class="panel__head"><h2>未核实与疑似重复</h2><span class="panel__meta">不猜测并单</span></div>
+    <div class="panel__body"><div class="bar"><i style="width:50%"></i></div><div class="legend"><span>缺执飞号挂账</span><span>疑似项仅提示</span></div></div>
+  </section>
+</div>
+<script>
+async function refreshBilling(event){
+  if(event){ event.stopImmediatePropagation(); }
+  const feedback = document.querySelector("#feedback");
+  if(feedback) feedback.textContent = "运行中";
+  const response = await fetch("/api/billing/runs", {method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({demo:true})});
+  const unsettled = await fetch("/api/billing/unsettled").then(r => r.json());
+  const data = await response.json();
+  document.querySelector("#kpi-sorties").textContent = data.totals.charged_sorties;
+  document.querySelector("#kpi-unsettled").textContent = unsettled.length;
+  document.querySelector("#kpi-quarantine").textContent = data.totals.quarantined_legs;
+  document.querySelector("#kpi-fee").textContent = data.totals.total_fee;
+  document.querySelector("#result").textContent = JSON.stringify(data, null, 2);
+  if(feedback) feedback.textContent = "已完成";
+}
+// 本脚本先于全局 app.js 注册，拦截全局运行按钮的默认演示逻辑
+document.querySelector("#run")?.addEventListener("click", refreshBilling);
+refreshBilling();
+</script>
+{% endblock %}

@@ -14,6 +14,7 @@
 | M4 UTC 航链 | 换算航段并校验先后顺序 | POST /api/itineraries/build | `app/modules/m4_itinerary/builder.py` `app/modules/m4_itinerary/validate.py` | `tests/test_m4_itinerary.py` |
 | M5 衔接判定 | 核对航站楼换乘与等待 | POST /api/connections/check | `app/modules/m5_connections/rules.py` `app/modules/m5_connections/windows.py` | `tests/test_m5_connections.py` |
 | M6 批次导出 | 核对航段守恒并导出时刻 | POST /api/reconcile | `app/modules/m6_batches/compare.py` `app/modules/m6_batches/exporter.py` | `tests/test_m6_batches.py` |
+| M7 计费对账 | 按实际起飞架次与航司对账 | POST /api/billing/runs | `app/modules/m7_billing/sorties.py` `app/modules/m7_billing/billing_store.py` | `tests/test_m7_billing.py` |
 
 ## 陷阱登记
 
@@ -29,12 +30,26 @@
 | TRAP-14 | 同航段时刻冲突 | 后写覆盖原计划 | 冲突版本进入隔离区 | `app/modules/m1_legs/parser.py` | `tests/test_m1_legs.py::test_conflicting_duplicate_detected` |
 | TRAP-23 | 衔接窗口端点 | 结束时刻被重复计入 | 使用半开区间 | `app/modules/m5_connections/windows.py` | `tests/test_m5_connections.py::test_half_open_window_excludes_end` |
 | TRAP-25 | 时区版本重叠 | 随机选中一版偏移 | 多个生效版本立即拒绝 | `app/modules/m2_airports/registry.py` | `tests/test_m2_airports.py::test_overlapping_timezone_versions_rejected` |
+| TRAP-31 | 共享航班号被当成独立架次 | 一架飞机挂多个号收多次费 | 映射到执飞号后归并，架次键不含营销号 | `app/modules/m7_billing/sorties.py` | `tests/test_m7_billing.py::test_codeshare_flights_count_as_one_sortie` |
+| TRAP-32 | 同航线同刻加班机被并掉 | 加班架次漏收费 | 航班性质 NORMAL/EXTRA 进入架次键 | `app/modules/m7_billing/sorties.py` | `tests/test_m7_billing.py::test_extra_flight_same_route_same_time_billed_separately` |
+| TRAP-33 | 两条缺执飞号航段被按时间机号猜测并单 | 猜测被当成已核实架次 | 保持 UNVERIFIED 挂账，疑似项只出提示不并单 | `app/modules/m7_billing/sorties.py` | `tests/test_m7_billing.py::test_two_legs_without_operating_no_are_unverified_not_guessed` |
+| TRAP-34 | 纠正数据后重算重复收费 | 同一架次被两个批次各收一次 | 已计费架次键部分唯一索引 + ALREADY_BILLED 标记 | `app/modules/m7_billing/billing_store.py` | `tests/test_m7_billing.py::test_corrected_rerun_never_double_charges` |
+| TRAP-35 | 共享关系冲突或悬空 | 随机选一条映射采信 | MAPPING_CONFLICT/UNKNOWN_REFERENCE 隔离带行号 | `app/modules/m7_billing/parser.py` | `tests/test_m7_billing.py::test_codeshare_mapping_conflict_and_unknown_reference` |
+| TRAP-36 | 对账单无法回溯原航班 | 共享号在账单上消失 | 每架次存全部原航班号与物理行号并随 CSV/JSON 导出 | `app/modules/m7_billing/exporter.py` | `tests/test_m7_billing.py::test_statement_csv_traces_every_sortie_to_original_flights` |
 
 ## 对账规则
 
 - 输入航段 = 有效航段 + 冲突航段 + 隔离航段。
 - 行程航段 = 可衔接航段 + 不可衔接航段。
 - 到达 UTC 必须晚于起飞 UTC，飞行时长不得超过 18 小时。
+
+## M7 计费规则
+
+- 计费架次 = 按架次键归并后的实际起飞次数；共享营销号不增加架次，EXTRA 与 NORMAL 各自独立。
+- 采信守恒：采信航段数 = 架次成员航段数 + 未核实航段数；隔离航段单独留证据。
+- 未结清 = 未核实航段（缺执飞号）+ 各批次隔离航段，可通过 `/api/billing/unsettled` 查询；补录执飞号再跑批次后自动结清。
+- 同输入重跑复用 run_id 不新增收费；不同输入产生新批次时，历史已收费架次标记 ALREADY_BILLED，数据库唯一索引兜底。
+- 对账单每个架次可经 sortie_id 查回全部原航班号与来源行号。
 
 ## 已知不覆盖
 

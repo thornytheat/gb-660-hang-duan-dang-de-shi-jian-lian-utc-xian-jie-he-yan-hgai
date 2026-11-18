@@ -16,8 +16,16 @@ docker compose up --build
 - M4 UTC 航链：页面 /itineraries，接口 /api/itineraries/build
 - M5 衔接判定：页面 /connections，接口 /api/connections/check
 - M6 批次导出：页面 /batches，接口 /api/reconcile
+- M7 计费对账：页面 /billing，接口 /api/billing/runs（JSON 或 multipart CSV 上传，对账单见 /api/billing/export/statement.csv）
 
 ## 运行规则
 
 同一输入内容生成相同运行标识，重复执行复用已有批次。隔离记录包含原因码、原始行号与原值；业务导出只保留一份证据清单。
+
+## 计费对账（M7）
+
+- 共享航班号映射到执飞航班号后归并为同一架次，一次起飞只收一次费；航班性质进架次键，同航线同刻加班机另算。
+- 两条航段都缺执飞航班号时保持 UNVERIFIED 挂账，只给疑似重复提示，绝不猜测并单；未结清航段可在 `/api/billing/unsettled` 查询。
+- 导入的共享关系会改变架次归并；同输入重跑幂等，纠正重算时历史已收费架次标记 ALREADY_BILLED，DB 部分唯一索引兜底防重复收费。
+- 对账单每个计费架次带全部原航班号与物理行号，可逐架次回溯。样例见 `sample_data/billing_legs.csv`、`sample_data/billing_codeshares.csv`。
 
